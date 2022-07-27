@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Callable, TypeVar
+T = TypeVar("T")
 
 class CleanReadCSV:
     def __init__(self, data_path: str = None):
@@ -60,8 +62,11 @@ class CleanReadCSV:
     def existing_q(self):
         df =  self.data
         return df[df["Qp"].notnull()]
-    
-    def hexplot(self, plot:str=None, direction:str = None, value:float = 0., grid = 25, func= (lambda x: x), **kwargs):
+    def experimental_hexplot(self, plot: str = None, azimuth: float = None):
+        if azimuth is None:
+            azimuth = 0
+        np.isclose()
+    def hexplot(self, plot:str=None, direction:str = None, value:float = 0., grid = 25, func: Callable[[T],float]= (lambda x: x), **kwargs):
         df =  self.data
         min_x, max_x = self.min_x, self.max_x
         min_y, max_y = self.min_y, self.max_y
