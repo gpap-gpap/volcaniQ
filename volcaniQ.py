@@ -25,9 +25,9 @@ class CleanReadCSV:
         self._data[temp_columns] = temp_df.values[:,:9]
 
         # rounding to 2 dp and values of elastic constants in GPa and density in g/cm3
-        self._data["K"]=self._data["K"].apply(lambda x: round(x/10**9,2))
-        self._data["μ"]=self._data["μ"].apply(lambda x: round(x/10**9,2))
-        self._data["ρ"]=self._data["ρ"].apply(lambda x: round(x/10**3,2))
+        self._data["K"] = self._data["K"].apply(lambda x: round(x/10**9,2))
+        self._data["μ"] = self._data["μ"].apply(lambda x: round(x/10**9,2))
+        self._data["ρ"] = self._data["ρ"].apply(lambda x: round(x/10**3,2))
 
         #setting limits of data for plotting
         self.min_x, self.max_x = self._data["x"].min(), self._data["x"].max()
@@ -38,7 +38,6 @@ class CleanReadCSV:
     @property
     def data(self):
         return self._data
-
     def window_by_xy(self, x_range: int or list = None, y_range: int or list = None) -> pd.DataFrame:
         df =  self.data
         min_x, max_x = self.min_x, self.max_x
@@ -101,14 +100,25 @@ class RockPhysicsModel:
     @property
     def dry_modulus(self):
         return self._dry_modulus
+    
+    @dry_modulus.setter
+    def dry_modulus(self, value):
+        self._dry_modulus = value
+        self.L0 =  self.dry_modulus- 2 / 3 * self.shear_modulus
 
     @property
     def shear_modulus(self):
         return self._shear_modulus
+    
+    @shear_modulus.setter
+    def shear_modulus(self, value):
+        self._shear_modulus = value
 
     @property
     def mineral_modulus(self):
         return self._mineral_modulus
+
+    @mineral_modulus.setter
     
     @property
     def porosity(self):
@@ -132,25 +142,28 @@ class RockPhysicsModel:
         Pmod = Kd + (1 - Kd / Km) ** 2 / (phi / Kf - Kd / Km ** 2 + (1 - phi) / Km) + 4 / 3 * mu
 
         # Might as well define cij's in case this ever needs anisotropic modelling
-        cij[0][0] = cij[1][1] = cij[2][2] = Pmod
-        cij[3][3] = cij[4][4] = cij[5][5] = mu
-        cij[0][1] = cij[0][2] = cij[2][0] = cij[1][0] = cij[1][2] = cij[2][1] = Pmod - 2 * mu
+        cij[0, 0] = cij[1, 1] = cij[2, 2] = Pmod
+        cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
+        cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = Pmod - 2 * mu
         
         return cij
 
-    def squirt_flow_model(self, fluid_modulus:float = None, epsilon:float =None, tau:float = None):
+    def squirt_flow_model(self, fluid_modulus:float = None, epsilon:float =None, tau:float = 0.):
         cij = np.zeros((6, 6), dtype=np.cfloat)
         Kf = fluid_modulus
         l, m = self.L0, self.shear_modulus
         lamb = (16 * (15 * l * (-Kf + l) + 4 * (-3 * Kf + 5 * l) * m + 4 * m ** 2)) / (45.0 * (l + m) * (3 * Kf + 4 * m))
         mu = (16 * m) / (45.0 * (l + m))
-        low_freq = self.gassmann_model(fluid_modulus = fluid_modulus)        
-        if tau is None:
-            tau = 0.
-        cij[0][0] = cij[1][1] = cij[2][2] = lamb + 2 * mu
-        cij[3][3] = cij[4][4] = cij[5][5] = mu
-        cij[0][1] = cij[0][2] = cij[2][0] = cij[1][0] = cij[1][2] = cij[2][1] = lamb
+        low_freq = self.gassmann_model(fluid_modulus = fluid_modulus)
+        cij[0, 0] = cij[1, 1] = cij[2, 2] = lamb + 2 * mu
+        cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
+        cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = lamb
         return lambda omega:  low_freq + epsilon* (l + 2 * m)* (1j * (10 ** omega) * tau)/ (1 + 1j * (10 ** omega) * tau)* cij
+
+    def attenuation(self, fluid_modulus:float = None, epsilon:float =None):
+        real_part = self.gassmann_model(fluid_modulus = fluid_modulus) + epsilon* (l + 2 * m)*10**(2*omega)/(1 + 10**(2*omega))
+        imaginary_part = 10**omega/(1 + 10**(2*omega))
+        return 10^omega/(1 + 10^(2 omega))
 
     def plot(self, fluid_modulus:float = None, epsilon:float =None, tau:float = None):
         omega_axis = np.log10(tau) + np.arange(-2, 2, .1)
