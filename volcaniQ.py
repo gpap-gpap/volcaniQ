@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,7 +8,7 @@ class CleanReadCSV:
 
         # load data from data path or user-specified directory
         if data_path is None:
-            self.data_path = '../data/attenuation_and_moduli_3D_grid_centre_uturuncu.csv'
+            self.data_path = 'attenuation_and_moduli_3D_grid_centre_uturuncu.csv'
         else:
             self.data_path = data_path
         temp_df = pd.read_csv(self.data_path)
@@ -128,6 +129,24 @@ class RockPhysicsModel:
     def density(self):
         return self._density
     
+    def effective_fluid_modulus(self, fluid1_modulus: float, fluid2_modulus: float, saturation: float=1., patch_parameter:float=1.):
+        s, q = saturation, patch_parameter
+        k1, k2 = fluid1_modulus, fluid2_modulus
+        keff = (s*k1 + q * (1-s) * k2) / (s + q * (1-s))
+        return keff
+
+    def effective_fluid_tau(self, fluid1_viscosity: float, fluid2_viscosity: float, saturation: float=1., patch_parameter:float=1., reference_frequency: float=1.):
+        s, q = saturation, patch_parameter
+        def BrooksCorey(s_wetting, pore_lambda):
+            s = s_wetting
+            return s**((2+3*pore_lambda)/pore_lambda), (1-s)**2 * (1-s**((2+pore_lambda)/pore_lambda ))
+        eta1, eta2 = fluid1_viscosity, fluid2_viscosity
+        k1, k2 = BrooksCorey(s, q)
+        m1, m2 = k1/eta1, k2/eta2
+        eta_eff = reference_frequency*eta1(s + q * (1-s))/(s * m1 + q * (1-s) * m2)
+        return eta_eff
+
+
     def gassmann_model(self, fluid_modulus:float = None):
         cij = np.zeros((6, 6))
         Km, Kd, mu, phi = (
@@ -158,12 +177,14 @@ class RockPhysicsModel:
         cij[0, 0] = cij[1, 1] = cij[2, 2] = lamb + 2 * mu
         cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
         cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = lamb
-        return lambda omega:  low_freq + epsilon* (l + 2 * m)* (1j * (10 ** omega) * tau)/ (1 + 1j * (10 ** omega) * tau)* cij
+        return lambda omega:  low_freq + epsilon* (l + 2 * m)* (1j * (10 ** (tau - omega))/ (1 + 1j * (10 ** (tau - omega))* cij))
 
-    def attenuation(self, fluid_modulus:float = None, epsilon:float =None):
-        real_part = self.gassmann_model(fluid_modulus = fluid_modulus) + epsilon* (l + 2 * m)*10**(2*omega)/(1 + 10**(2*omega))
-        imaginary_part = 10**omega/(1 + 10**(2*omega))
-        return 10^omega/(1 + 10^(2 omega))
+    # def attenuation(self, fluid_modulus:float = None, epsilon:float =None):
+    #     real_part = self.gassmann_model(fluid_modulus = fluid_modulus) + epsilon* (l + 2 * m)*10**(2*omega)/(1 + 10**(2*omega))
+    #     imaginary_part = 10**omega/(1 + 10**(2*omega))
+    #     return 10^omega/(1 + 10^(2 omega))
+    # def __call__(self, *args: Any, **kwds: Any) -> Any:
+        
 
     def plot(self, fluid_modulus:float = None, epsilon:float =None, tau:float = None):
         omega_axis = np.log10(tau) + np.arange(-2, 2, .1)
@@ -171,7 +192,10 @@ class RockPhysicsModel:
         cij = self.squirt_flow_model(fluid_modulus = fluid_modulus, epsilon=epsilon, tau = tau)
         f_cij = np.array([cij(omega) for omega in omega_axis])
         fig, ax = plt.subplots(1,1)
-        ax.axhline(cij0[0][0], linestyle='--', color='k')
+        ax.axhline(cij0[0, 0], linestyle='--', color='k')
         ax.plot(omega_axis, np.real(f_cij[:,0,0]))
         plt.show()
         plt.close()
+
+if __name__ == "__main__":
+    rock = RockPhysicsModel(dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2, density=2.65)
