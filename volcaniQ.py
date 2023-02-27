@@ -3,7 +3,61 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-class CleanReadCSV:
+class Fluids(object):
+    """
+    Fluids class for accessing fluid properties from a csv file
+
+    _extended_summary_
+
+    Args:
+        object (_type_): _description_
+    """
+    def __init__(self, fluid_data_file: str = None):
+        if fluid_data_file is None:
+            fluid_data_file = 'fluid_data.csv'
+        self.dataset = pd.read_csv(fluid_data_file)
+        self._current_fluid = None
+        self._temp_df = None
+
+    @property
+    def temp_df(self):
+        return self._temp_df
+    
+    @temp_df.setter
+    def temp_df(self, df: pd.DataFrame):
+        self._temp_df = df
+
+    @property
+    def current_fluid(self):
+        return self._current_fluid
+    
+    @current_fluid.setter
+    def current_fluid(self, fluid_name: str):
+        self._current_fluid = fluid_name
+        
+    @property
+    def modulus(self):
+        return self.temp_df["Modulus(GPa)"]
+    
+    @property
+    def density(self):
+        return self.temp_df["Density(g/cm3)"]
+    
+    @property
+    def viscosity(self):
+        return self.temp_df["Viscosity(Pa.ms)"]
+    
+    @property
+    def depth(self):
+        return self.temp_df["Depth(Km)"]
+    
+    def __call__(self, fluid_name: str) -> Fluids:
+        assert fluid_name in self.dataset["Fluid"].values, f"Fluid not in database, use one of {self.dataset['Fluid'].values}"
+        self.current_fluid = fluid_name
+        self.temp_df = self.dataset[(self.dataset['Fluid']==self.current_fluid)]
+        return self
+
+class CleanReadCSV(object):
     def __init__(self, data_path: str = None):
 
         # load data from data path or user-specified directory
@@ -39,6 +93,7 @@ class CleanReadCSV:
     @property
     def data(self):
         return self._data
+    
     def window_by_xy(self, x_range: int or list = None, y_range: int or list = None) -> pd.DataFrame:
         df =  self.data
         min_x, max_x = self.min_x, self.max_x
@@ -88,6 +143,49 @@ class CleanReadCSV:
         plt.show()
         plt.close()
         
+class EffectiveFluid(object):
+    def __init__(self, fluid_1:str, fluid_2:str):
+        self.fluids = Fluids()
+        try:
+            self.fluids(fluid_1)
+        except:
+            raise ValueError(f"Fluid {fluid_1} not in database")
+        try:
+            self.fluids(fluid_2)
+        except:
+            raise ValueError(f"Fluid {fluid_2} not in database")
+        
+        self.mod1 = self.fluids(fluid_1).modulus
+        self.fluid2 = self.fluids(fluid_2).modulus
+        self.saturation = None
+        self.patch_parameter = None
+        self.reference_frequency = None
+        
+    def _effective_fluid_modulus(self, fluid1_modulus: float, fluid2_modulus: float, saturation: float=1., patch_parameter:float=1.):
+        s, q = saturation, patch_parameter
+        k1, k2 = fluid1_modulus, fluid2_modulus
+        keff = (s*k1 + q * (1-s) * k2) / (s + q * (1-s))
+        return keff
+    
+    def _effective_fluid_tau(self, fluid1_viscosity: float, fluid2_viscosity: float, saturation: float=1., patch_parameter:float=1., reference_frequency: float=1.):
+        s, q = saturation, patch_parameter
+        def BrooksCorey(s_wetting, pore_lambda):
+            s = s_wetting
+            return s**((2+3*pore_lambda)/pore_lambda), (1-s)**2 * (1-s**((2+pore_lambda)/pore_lambda ))
+        eta1, eta2 = fluid1_viscosity, fluid2_viscosity
+        k1, k2 = BrooksCorey(s, q)
+        m1, m2 = k1/eta1, k2/eta2
+        eta_eff = reference_frequency*eta1(s + q * (1-s))/(s * m1 + q * (1-s) * m2)
+        return eta_eff
+    
+    def _effective_fluid_density(self, fluid1_density: float, fluid2_density: float, saturation: float=1.):
+        s = saturation
+        rho1, rho2 = fluid1_density, fluid2_density
+        rho_eff = (s*rho1 +  (1-s) * rho2)
+        return rho_eff
+    
+    
+    
 
 class RockPhysicsModel:
     def __init__(self, dry_modulus: float = None, shear_modulus: float = None, mineral_modulus: float = None, porosity: float = None, density : float = None):
@@ -120,6 +218,8 @@ class RockPhysicsModel:
         return self._mineral_modulus
 
     @mineral_modulus.setter
+    def mineral_modulus(self, value):
+        self._mineral_modulus = value
     
     @property
     def porosity(self):
@@ -128,23 +228,6 @@ class RockPhysicsModel:
     @property
     def density(self):
         return self._density
-    
-    def effective_fluid_modulus(self, fluid1_modulus: float, fluid2_modulus: float, saturation: float=1., patch_parameter:float=1.):
-        s, q = saturation, patch_parameter
-        k1, k2 = fluid1_modulus, fluid2_modulus
-        keff = (s*k1 + q * (1-s) * k2) / (s + q * (1-s))
-        return keff
-
-    def effective_fluid_tau(self, fluid1_viscosity: float, fluid2_viscosity: float, saturation: float=1., patch_parameter:float=1., reference_frequency: float=1.):
-        s, q = saturation, patch_parameter
-        def BrooksCorey(s_wetting, pore_lambda):
-            s = s_wetting
-            return s**((2+3*pore_lambda)/pore_lambda), (1-s)**2 * (1-s**((2+pore_lambda)/pore_lambda ))
-        eta1, eta2 = fluid1_viscosity, fluid2_viscosity
-        k1, k2 = BrooksCorey(s, q)
-        m1, m2 = k1/eta1, k2/eta2
-        eta_eff = reference_frequency*eta1(s + q * (1-s))/(s * m1 + q * (1-s) * m2)
-        return eta_eff
 
 
     def gassmann_model(self, fluid_modulus:float = None):
@@ -167,7 +250,7 @@ class RockPhysicsModel:
         
         return cij
 
-    def squirt_flow_model(self, fluid_modulus:float = None, epsilon:float =None, tau:float = 0.):
+    def squirt_flow_model(self, fluid_modulus:float = None, epsilon:float = None, omegac:float = 0.):
         cij = np.zeros((6, 6), dtype=np.cfloat)
         Kf = fluid_modulus
         l, m = self.L0, self.shear_modulus
@@ -177,19 +260,22 @@ class RockPhysicsModel:
         cij[0, 0] = cij[1, 1] = cij[2, 2] = lamb + 2 * mu
         cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
         cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = lamb
-        return lambda omega:  low_freq + epsilon* (l + 2 * m)* (1j * (10 ** (tau - omega))/ (1 + 1j * (10 ** (tau - omega))* cij))
+        return lambda omega:  low_freq + epsilon* (l + 2 * m)* (1j * (10 ** (omega-omegac))/ (1 + 1j * (10 ** (omega-omegac))* cij))
 
-    # def attenuation(self, fluid_modulus:float = None, epsilon:float =None):
-    #     real_part = self.gassmann_model(fluid_modulus = fluid_modulus) + epsilon* (l + 2 * m)*10**(2*omega)/(1 + 10**(2*omega))
-    #     imaginary_part = 10**omega/(1 + 10**(2*omega))
-    #     return 10^omega/(1 + 10^(2 omega))
+    def max_attenuation(self, fluid_modulus:float = None, epsilon:float =None):
+        low_freq = self.gassmann_model(fluid_modulus = fluid_modulus)
+        max_att = self.squirt_flow_model(fluid_modulus = fluid_modulus, epsilon=epsilon, tau = 0)
+        qij = (max_att)/(2*low_freq + max_att)
+        maxQp = qij[0, 0]
+        maxQs = qij[3, 3]
+        return maxQp, maxQs
     # def __call__(self, *args: Any, **kwds: Any) -> Any:
         
 
-    def plot(self, fluid_modulus:float = None, epsilon:float =None, tau:float = None):
-        omega_axis = np.log10(tau) + np.arange(-2, 2, .1)
+    def plot(self, fluid_modulus:float = None, epsilon:float =None, omegac:float = None):
+        omega_axis = omegac + np.arange(-2, 2, .1)
         cij0 = self.gassmann_model(fluid_modulus = fluid_modulus)
-        cij = self.squirt_flow_model(fluid_modulus = fluid_modulus, epsilon=epsilon, tau = tau)
+        cij = self.squirt_flow_model(fluid_modulus = fluid_modulus, epsilon=epsilon, omegac = omegac)
         f_cij = np.array([cij(omega) for omega in omega_axis])
         fig, ax = plt.subplots(1,1)
         ax.axhline(cij0[0, 0], linestyle='--', color='k')
@@ -199,3 +285,4 @@ class RockPhysicsModel:
 
 if __name__ == "__main__":
     rock = RockPhysicsModel(dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2, density=2.65)
+    rock.plot(fluid_modulus=10, epsilon=0.1, omegac=0.)
