@@ -184,17 +184,20 @@ class EffectiveFluid(object):
         rho_eff = (s*rho1 +  (1-s) * rho2)
         return rho_eff
     
-    
+
     
 
 class RockPhysicsModel:
-    def __init__(self, dry_modulus: float = None, shear_modulus: float = None, mineral_modulus: float = None, porosity: float = None, density : float = None):
+    def __init__(self, dry_modulus: float = None, shear_modulus: float = None, mineral_modulus: float = None, porosity: float = None):
         self._dry_modulus = dry_modulus
         self._shear_modulus = shear_modulus
         self._mineral_modulus = mineral_modulus
         self.L0 =  self.dry_modulus- 2 / 3 * self.shear_modulus
         self._porosity = porosity
-        self._density = density
+
+    @classmethod
+    def from_data(cls, minQp:float, minQs:float, meanK:float, meanmu:float, porosity:float, Kf:float):
+        return cls(dry_modulus = minQp**2 * meanK, shear_modulus = minQs**2 * meanmu, mineral_modulus = meanK, porosity = porosity, fluid_modulus = Kf)
 
     @property
     def dry_modulus(self):
@@ -224,10 +227,6 @@ class RockPhysicsModel:
     @property
     def porosity(self):
         return self._porosity
-
-    @property
-    def density(self):
-        return self._density
 
 
     def gassmann_model(self, fluid_modulus:float = None):
