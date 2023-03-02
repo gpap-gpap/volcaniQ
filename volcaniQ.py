@@ -2,6 +2,7 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Callable
 
 class Fluids(object):
     """
@@ -185,51 +186,102 @@ class EffectiveFluid(object):
         return rho_eff
     
 
+class RockPhysicsModelCalibrator(object):
+    def __init__(self):
+        self._instance = None
     
+    def __call__(self, Vp:float, Vs: float, Rho: float, Qp: float, Qs: float, porosity: float, Kf:float, mineral_modulus:float, **_ignored)->RockPhysicsModel:
+        if self._instance is None:
+            mu = Vs**2 * Rho
+            p = Vp**2 * Rho
+            Km = mineral_modulus
+            phi = porosity
+            
+            kg = ((0.3333333333333333 * (4 * mu * Qp + -3 * p * Qs + -4 * mu * Qp * \
+                Qs + 3 * p * Qp * Qs)) / Qs) / Qp
+            sq_lamb =(0.03333333333333333 * (Qs ** -2) * (20 * mu * Qp * Qs + 15 * Kf * \
+                Qp * (Qs ** 2) + -20 * mu * Qp * (Qs ** 2) + -(np.sqrt((-20 * mu * Qp \
+                * Qs + -15 * Kf * Qp * (Qs ** 2) + 20 * mu * Qp * (Qs ** 2)) ** 2 + \
+                -60 * Qp * (Qs ** 2) * (12 * (mu ** 2) * Qp + -4 * mu * p * Qs + 6 * \
+                Kf * mu * Qp * Qs + -24 * (mu ** 2) * Qp * Qs + 3 * Kf * p * (Qs ** \
+                2) + 8 * mu * p * (Qs ** 2) + -6 * Kf * mu * Qp * (Qs ** 2) + 12 * \
+                (mu ** 2) * Qp * (Qs ** 2) + -3 * Kf * p * (Qs ** 3) + -4 * mu * p * \
+                (Qs ** 3)))))) / Qp
+            sq_m = (mu * (-1 + Qs)) / Qs
+            epsilon = (-540 * (mu ** 2) * Qp + 180 * mu * p * Qs + 742.5 * Kf * mu * Qp * \
+                Qs + 540 * (mu ** 2) * Qp * Qs + -135 * Kf * p * (Qs ** 2) + -180 * \
+                mu * p * (Qs ** 2) + (-22.5 * mu * (np.sqrt((-20 * mu * Qp * Qs + -15 \
+                * Kf * Qp * (Qs ** 2) + 20 * mu * Qp * (Qs ** 2)) ** 2 + -60 * Qp * \
+                (Qs ** 2) * (12 * (mu ** 2) * Qp + -4 * mu * p * Qs + 6 * Kf * mu * \
+                Qp * Qs + -24 * (mu ** 2) * Qp * Qs + 3 * Kf * p * (Qs ** 2) + 8 * mu \
+                * p * (Qs ** 2) + -6 * Kf * mu * Qp * (Qs ** 2) + 12 * (mu ** 2) * Qp \
+                * (Qs ** 2) + -3 * Kf * p * (Qs ** 3) + -4 * mu * p * (Qs ** 3))))) / \
+                Qs) / (256 * (mu ** 2) * Qp + -32 * mu * p * Qs + -192 * Kf * mu * Qp \
+                * Qs + -512 * (mu ** 2) * Qp * Qs + 24 * Kf * p * (Qs ** 2) + 64 * mu \
+                * p * (Qs ** 2) + 192 * Kf * mu * Qp * (Qs ** 2) + 256 * (mu ** 2) * \
+                Qp * (Qs ** 2) + -24 * Kf * p * (Qs ** 3) + -32 * mu * p * (Qs ** 3))
+            
+            self._instance = RockPhysicsModel(dry_modulus=Kd, shear_modulus=sq_m, mineral_modulus=Km, porosity=phi, sq_lambda=sq_lamb, **_ignored)
+            self._instance.fluid_modulus = Kf
+            self._instance.crack_density = epsilon
+            self._instance.omega_squirt = 0.
+        return self._instance
+
 
 class RockPhysicsModel:
-    def __init__(self, dry_modulus: float = None, shear_modulus: float = None, mineral_modulus: float = None, porosity: float = None):
+    def __init__(self, dry_modulus: float, shear_modulus: float, mineral_modulus: float, porosity: float, sq_lambda:float)->None:
         self._dry_modulus = dry_modulus
         self._shear_modulus = shear_modulus
         self._mineral_modulus = mineral_modulus
-        self.L0 =  self.dry_modulus- 2 / 3 * self.shear_modulus
+        self.L0 =  sq_lambda
         self._porosity = porosity
-
-    @classmethod
-    def from_data(cls, minQp:float, minQs:float, meanK:float, meanmu:float, porosity:float, Kf:float):
-        return cls(dry_modulus = minQp**2 * meanK, shear_modulus = minQs**2 * meanmu, mineral_modulus = meanK, porosity = porosity, fluid_modulus = Kf)
+        self._fluid_modulus = None
+        self._crack_density = None
+        self._omega_squirt = None
 
     @property
     def dry_modulus(self):
         return self._dry_modulus
     
-    @dry_modulus.setter
-    def dry_modulus(self, value):
-        self._dry_modulus = value
-        self.L0 =  self.dry_modulus- 2 / 3 * self.shear_modulus
-
     @property
     def shear_modulus(self):
         return self._shear_modulus
     
-    @shear_modulus.setter
-    def shear_modulus(self, value):
-        self._shear_modulus = value
-
     @property
     def mineral_modulus(self):
         return self._mineral_modulus
-
-    @mineral_modulus.setter
-    def mineral_modulus(self, value):
-        self._mineral_modulus = value
     
     @property
     def porosity(self):
         return self._porosity
 
+    @property
+    def fluid_modulus(self):
+        return self._fluid_modulus
+    
+    @fluid_modulus.setter
+    def fluid_modulus(self, value):
+        self._fluid_modulus = value
 
-    def gassmann_model(self, fluid_modulus:float = None):
+    @property
+    def crack_density(self):
+        return self._crack_density
+    
+    @crack_density.setter
+    def crack_density(self, value):
+        self._crack_density = value
+    
+    @property
+    def omega_squirt(self):
+        return self._omega_squirt
+    
+    @omega_squirt.setter
+    def omega_squirt(self, value):
+        self._omega_squirt = value
+
+    @property
+    def gassmann_model(self) -> np.ndarray:
+        Kf = self.fluid_modulus
         cij = np.zeros((6, 6))
         Km, Kd, mu, phi = (
                 self.mineral_modulus,
@@ -237,7 +289,6 @@ class RockPhysicsModel:
                 self.shear_modulus,
                 self.porosity,
             )
-        Kf = fluid_modulus
 
         # Gassmann's model
         Pmod = Kd + (1 - Kd / Km) ** 2 / (phi / Kf - Kd / Km ** 2 + (1 - phi) / Km) + 4 / 3 * mu
@@ -249,39 +300,48 @@ class RockPhysicsModel:
         
         return cij
 
-    def squirt_flow_model(self, fluid_modulus:float = None, epsilon:float = None, omegac:float = 0.):
+    def squirt_flow_model(self) -> Callable:
+        Kf = self.fluid_modulus
+        epsilon = self.crack_density
+        omegac = self.omega_squirt
         cij = np.zeros((6, 6), dtype=np.cfloat)
-        Kf = fluid_modulus
         l, m = self.L0, self.shear_modulus
         lamb = (16 * (15 * l * (-Kf + l) + 4 * (-3 * Kf + 5 * l) * m + 4 * m ** 2)) / (45.0 * (l + m) * (3 * Kf + 4 * m))
         mu = (16 * m) / (45.0 * (l + m))
-        low_freq = self.gassmann_model(fluid_modulus = fluid_modulus)
+        low_freq = self.gassmann_model
         cij[0, 0] = cij[1, 1] = cij[2, 2] = lamb + 2 * mu
         cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
         cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = lamb
-        return lambda omega:  low_freq + epsilon* (l + 2 * m)* (1j * (10 ** (omega-omegac))/ (1 + 1j * (10 ** (omega-omegac))* cij))
 
-    def max_attenuation(self, fluid_modulus:float = None, epsilon:float =None):
-        low_freq = self.gassmann_model(fluid_modulus = fluid_modulus)
-        max_att = self.squirt_flow_model(fluid_modulus = fluid_modulus, epsilon=epsilon, tau = 0)
-        qij = (max_att)/(2*low_freq + max_att)
-        maxQp = qij[0, 0]
-        maxQs = qij[3, 3]
-        return maxQp, maxQs
+        def _squirt(omega)->np.ndarray:
+            return low_freq + epsilon* (l + 2 * m)* (1j * (10 ** (omega-omegac))/ (1 + 1j * (10 ** (omega-omegac))* cij))
+        return _squirt
+
     # def __call__(self, *args: Any, **kwds: Any) -> Any:
         
-
-    def plot(self, fluid_modulus:float = None, epsilon:float =None, omegac:float = None):
-        omega_axis = omegac + np.arange(-2, 2, .1)
-        cij0 = self.gassmann_model(fluid_modulus = fluid_modulus)
-        cij = self.squirt_flow_model(fluid_modulus = fluid_modulus, epsilon=epsilon, omegac = omegac)
+    
+    def plot(self)->None:
+        omegac = self.omega_squirt
+        omega_axis = np.arange(-2, 2, .1) - omegac
+        cij0 = self.gassmann_model
+        cij = self.squirt_flow_model()
+        # f_cij = np.array([cij(omega) for omega in omega_axis])
         f_cij = np.array([cij(omega) for omega in omega_axis])
         fig, ax = plt.subplots(1,1)
         ax.axhline(cij0[0, 0], linestyle='--', color='k')
-        ax.plot(omega_axis, np.real(f_cij[:,0,0]))
+        ax.plot(omega_axis, np.real(f_cij[:,0,0] ))
         plt.show()
         plt.close()
+    
+    def __call__(self, fluid_modulus:float|None = None, crack_density:float|None = None, omegac:float|None = None) -> RockPhysicsModel:
+        if fluid_modulus is not None:
+            self.fluid_modulus = fluid_modulus
+        if crack_density is not None:
+            self.crack_density = crack_density
+        if omegac is not None:
+            self.omega_squirt = omegac
+        return self
 
 if __name__ == "__main__":
-    rock = RockPhysicsModel(dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2, density=2.65)
-    rock.plot(fluid_modulus=10, epsilon=0.1, omegac=0.)
+    rock = RockPhysicsModel(dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2)
+    rock(fluid_modulus=10, epsilon=0.1, omegac=0.).plot
