@@ -2,10 +2,10 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Callable
+from typing import Callable, Tuple
 
 
-class Fluids(object):
+class FluidsReadCSV(object):
     """
     Fluids class for accessing fluid properties from a csv file
 
@@ -54,7 +54,7 @@ class Fluids(object):
     def depth(self):
         return self.temp_df["Depth(Km)"]
 
-    def __call__(self, fluid_name: str) -> Fluids:
+    def __call__(self, fluid_name: str) -> FluidsReadCSV:
         assert (
             fluid_name in self.dataset["Fluid"].values
         ), f"Fluid not in database, use one of {self.dataset['Fluid'].values}"
@@ -159,23 +159,36 @@ class CleanReadCSV(object):
         plt.close()
 
 
-class EffectiveFluid(object):
-    def __init__(self, fluid_1: str, fluid_2: str):
-        self.fluids = Fluids()
-        try:
-            self.fluids(fluid_1)
-        except ValueError:
-            raise ValueError(f"Fluid {fluid_1} not in database")
-        try:
-            self.fluids(fluid_2)
-        except ValueError:
-            raise ValueError(f"Fluid {fluid_2} not in database")
+class Fluid(object):
+    def __init__(self, density: float, viscosity: float, modulus: float) -> None:
+        self._density = density
+        self._viscosity = viscosity
+        self._modulus = modulus
 
-        self.fluid1 = self.fluids(fluid_1)
-        self.fluid2 = self.fluids(fluid_2)
+    @property
+    def density(self):
+        return self._density
+
+    @property
+    def viscosity(self):
+        return self._viscosity
+
+    @property
+    def modulus(self):
+        return self._modulus
+
+    def __call__(self) -> Tuple[float, float, float]:
+        return self.density, self.viscosity, self.modulus
+
+
+class EffectiveFluid(object):
+    def __init__(self, fluid_1: Fluid, fluid_2: Fluid) -> None:
+        self.fluid1 = fluid_1
+        self.fluid2 = fluid_2
         self._saturation = None
         self._patch_parameter = None
         self._reference_frequency = None
+
     @property
     def saturation(self):
         return self._saturation
@@ -186,64 +199,74 @@ class EffectiveFluid(object):
             self._saturation = value
         else:
             raise ValueError("Saturation must be between 0 and 1")
-    
+
     @property
     def patch_parameter(self):
         return self._patch_parameter
-    
+
     @patch_parameter.setter
     def patch_parameter(self, value):
-        if min(self.fluid1.modulus, self.fluid2.modulus)/max(self.fluid1.modulus, self.fluid2.modulus) <= value <= 1:
+        if (
+            min(self.fluid1.modulus, self.fluid2.modulus)
+            / max(self.fluid1.modulus, self.fluid2.modulus)
+            <= value
+            <= 1
+        ):
             self._patch_parameter = value
         else:
-            raise ValueError(f"Patch parameter must be between {min(self.fluid1.modulus, self.fluid2.modulus)/max(self.fluid1.modulus, self.fluid2.modulus)} and 1")
-    
+            raise ValueError(
+                f"Patch parameter must be between {min(self.fluid1.modulus, self.fluid2.modulus)/max(self.fluid1.modulus, self.fluid2.modulus)} and 1"
+            )
+
     @property
     def reference_frequency(self):
         return self._reference_frequency
-    
+
     @reference_frequency.setter
     def reference_frequency(self, value):
         self._reference_frequency = value
 
     @property
-    def effective_fluid_modulus(
-        self
-    ):  
+    def modulus(self):
         s, q = self.saturation, self.patch_parameter
         k1, k2 = self.fluid1.modulus, self.fluid2.modulus
-        keff = (s * k1 + q * (1 - s) * k2) / (s + q * (1 - s))
+        keff = (s + q * (1 - s)) / (s / k1 + q * (1 - s) / k2)
         return keff
 
     @property
-    def effective_fluid_tau(self):
+    def omega_c(self):
         s, q = self.saturation, self.patch_parameter
 
-        def BrooksCorey(s_wetting, pore_lambda):
+        def BrooksCorey(s_wetting, pore_lambda: float = 1.0):
             s = s_wetting
             return s ** ((2 + 3 * pore_lambda) / pore_lambda), (1 - s) ** 2 * (
                 1 - s ** ((2 + pore_lambda) / pore_lambda)
             )
 
         eta1, eta2 = self.fluid1.viscosity, self.fluid2.viscosity
-        k1, k2 = BrooksCorey(s, q)
+        k1, k2 = BrooksCorey(s)
         m1, m2 = k1 / eta1, k2 / eta2
         eta_eff = (
-            self.reference_frequency * eta1(s + q * (1 - s)) / (s * m1 + q * (1 - s) * m2)
+            self.reference_frequency
+            * eta1
+            * (s * m1 + q * (1 - s) * m2)
+            / (s + q * (1 - s))
         )
         return eta_eff
-    
+
     @property
-    def effective_fluid_density(
-        self
-    ):
+    def density(self):
         s = self.saturation
         rho1, rho2 = self.fluid1.density, self.fluid2.density
         rho_eff = s * rho1 + (1 - s) * rho2
         return rho_eff
-    
-    def __call__(self, saturation:float=1., patch_parameter:float=1.,
-        reference_frequency: float = 1.0) -> EffectiveFluid:
+
+    def __call__(
+        self,
+        saturation: float = 1.0,
+        patch_parameter: float = 1.0,
+        reference_frequency: float = 1.0,
+    ) -> EffectiveFluid:
         self.saturation = saturation
         self.patch_parameter = patch_parameter
         self.reference_frequency = reference_frequency
@@ -254,21 +277,121 @@ class RockPhysicsModelCalibrator(object):
     def __init__(self):
         self._instance = None
 
-    def __call__(self) -> RockPhysicsModel:
-        # values calibrated to K = 43.67, mu = 26.5, Qp = 43, rho = 2.65, phi = 0.15, Kf = 2.2
-        self._instance = RockPhysicsModel(lam=40.17, mu=38.08, phi=0.15)
-        self._instance.fluid_modulus = 2.2
-        self._instance.crack_density = 0.0098020
-        self._instance.omega_squirt = 0.0
+    def __call__(
+        self,
+        Vp: np.float64,
+        Vs: np.float64,
+        Rho: np.float64,
+        Qp: np.float64,
+        phi: np.float64,
+        Kf: np.float64,
+        Km: np.float64 = 36.5,  # assume quartz,
+    ) -> RockPhysicsModel:
+        mu = Vs**2 * Rho
+        lam = Vp**2 * Rho - 2 * mu
+        QP = 1 / Qp
+        epsilon = (45 / 8 * QP * (lam + mu) * (3 * Kf + 4 * mu)) / (
+            15 * (lam**2)
+            + 20 * lam * mu
+            + 12 * (mu**2)
+            - 3 * Kf * (5 * lam + 2 * mu)
+        )
+        Kd = (
+            Km
+            * (
+                -(
+                    Km
+                    * phi
+                    * (3 * lam + 2 * mu)
+                    * (
+                        15 * (-1 + QP) * (lam**2)
+                        + 20 * (-1 + 2 * QP) * lam * mu
+                        + 4 * (-3 + 5 * QP) * (mu**2)
+                    )
+                )
+                + 3
+                * (Kf**2)
+                * (
+                    3 * Km * (5 * lam + 2 * mu)
+                    + -(
+                        (-1 + phi)
+                        * (3 * lam + 2 * mu)
+                        * (5 * (-1 + QP) * lam + 2 * (-1 + 5 * QP) * mu)
+                    )
+                )
+                + Kf
+                * (
+                    (-1 + phi)
+                    * (3 * lam + 2 * mu)
+                    * (
+                        15 * (-1 + QP) * (lam**2)
+                        + 20 * (-1 + 2 * QP) * lam * mu
+                        + 4 * (-3 + 5 * QP) * (mu**2)
+                    )
+                    + 3
+                    * Km
+                    * (
+                        15 * (-1 + phi * (-1 + QP)) * (lam**2)
+                        + 4 * (-5 + -4 * phi + 10 * phi * QP) * lam * mu
+                        + 4 * (-3 + -phi + 5 * phi * QP) * (mu**2)
+                    )
+                )
+            )
+        ) / (
+            45
+            * (Kf + -lam)
+            * lam
+            * (Km * (Kf + Kf * phi + -(Km * phi)) + Kf * (-1 + QP) * lam)
+            + 6
+            * (
+                3 * Kf * Km * (Kf + Kf * phi + -(Km * phi))
+                + 2
+                * (
+                    5 * (Km**2) * phi
+                    + -5 * Kf * Km * (1 + phi)
+                    + 2 * (Kf**2) * (-2 + 5 * QP)
+                )
+                * lam
+                + 5 * Kf * (3 + -5 * QP) * (lam**2)
+            )
+            * mu
+            + 4
+            * (
+                9 * (Km**2) * phi
+                + 3 * (Kf**2) * (-1 + 5 * QP)
+                + -(Kf * (9 * Km * (1 + phi) + (-19 + 35 * QP) * lam))
+            )
+            * (mu**2)
+            + 8 * Kf * (3 + -5 * QP) * (mu**3)
+        )
+        self._instance = RockPhysicsModel(
+            lam=lam,
+            shear_modulus=mu,
+            porosity=phi,
+            crack_density=epsilon,
+            dry_modulus=Kd,
+            mineral_modulus=Km,
+        )
+        # self._instance.omega_squirt = 0.0
         return self._instance
 
 
 class RockPhysicsModel:
-    def __init__(self, lam: float, mu: float, phi: float) -> None:
+    def __init__(
+        self,
+        lam: np.float64,
+        shear_modulus: np.float64,
+        porosity: np.float64,
+        crack_density: np.float64,
+        dry_modulus: np.float64,
+        mineral_modulus: np.float64,
+    ) -> None:
         self._lam = lam
-        self._mu = mu
-        self._phi = phi
-        self._crack_density = None
+        self._shear_modulus = shear_modulus
+        self._porosity = porosity
+        self._crack_density = crack_density
+        self._dry_modulus = dry_modulus
+        self._mineral_modulus = mineral_modulus
         self._fluid_modulus = None
         self._omega_squirt = None
 
@@ -277,12 +400,24 @@ class RockPhysicsModel:
         return self._lam
 
     @property
-    def mu(self):
-        return self._mu
+    def shear_modulus(self):
+        return self._shear_modulus
 
     @property
-    def phi(self):
-        return self._phi
+    def porosity(self):
+        return self._porosity
+
+    @property
+    def crack_density(self):
+        return self._crack_density
+
+    @property
+    def dry_modulus(self):
+        return self._dry_modulus
+
+    @property
+    def mineral_modulus(self):
+        return self._mineral_modulus
 
     @property
     def fluid_modulus(self):
@@ -291,14 +426,6 @@ class RockPhysicsModel:
     @fluid_modulus.setter
     def fluid_modulus(self, value):
         self._fluid_modulus = value
-
-    @property
-    def crack_density(self):
-        return self._crack_density
-
-    @crack_density.setter
-    def crack_density(self, value):
-        self._crack_density = value
 
     @property
     def omega_squirt(self):
@@ -310,90 +437,48 @@ class RockPhysicsModel:
 
     @property
     def low_frequency_model(self) -> np.ndarray:
-        if not self._crack_density:
-            raise ValueError("Crack density not set")
-        if not self._fluid_modulus:
+        if self._fluid_modulus is None:
             raise ValueError("Fluid modulus not set")
         Kf = self.fluid_modulus
-        mu = self.mu
-        lam = self.lam
-        phi = self.phi
-        epsilon = self.crack_density
-        cij = np.zeros((6, 6))
-        #    Km, Kd, mu, phi = (
-        #         self.mineral_modulus,
-        #         self.dry_modulus,
-        #         self.shear_modulus,
-        #         self.porosity,
-        #     )
+        mu = self.shear_modulus
+        phi = self.porosity
+        cij = np.zeros((6, 6), dtype=np.float64)
+        Km, Kd, mu, phi = (
+            self.mineral_modulus,
+            self.dry_modulus,
+            self.shear_modulus,
+            self.porosity,
+        )
 
         # Gassmann's model
-        # Pmod = (
-        #     Kd
-        #     + (1 - Kd / Km) ** 2 / (phi / Kf - Kd / Km**2 + (1 - phi) / Km)
-        #     + 4 / 3 * mu
-        # )
-        p = (
-            lam
-            + 2 * mu
-            + (
-                4
-                / 45
-                * epsilon
-                * (lam + 2 * mu)
-                * (
-                    -80 * mu
-                    + 4
-                    * lam
-                    * (
-                        -2
-                        + (9 * Kf + -7 * lam) / (lam + mu)
-                        + (18 * (Kf + -lam)) / (3 * lam + 4 * mu)
-                    )
-                )
-            )
-            / (3 * Kf + 4 * mu)
-            + (
-                (
-                    -3
-                    * (lam + 2 * mu)
-                    * (
-                        -9 * Kf * lam
-                        + 9 * (lam**2)
-                        + 6 * Kf * mu
-                        + 20 * lam * mu
-                        + 36 * (mu**2)
-                    )
-                    * phi
-                )
-                / (9 * lam + 14 * mu)
-            )
-            / (3 * Kf + 4 * mu)
+        Pmod = (
+            Kd
+            + (1 - Kd / Km) ** 2 / (phi / Kf - Kd / Km**2 + (1 - phi) / Km)
+            + 4 / 3 * mu
         )
-        m = mu + (-15 * mu * (lam + 2 * mu) * phi) / (9 * lam + 14 * mu)
+
         # Might as well define cij's in case this ever needs anisotropic modelling
 
-        cij[0, 0] = cij[1, 1] = cij[2, 2] = p
-        cij[3, 3] = cij[4, 4] = cij[5, 5] = m
+        cij[0, 0] = cij[1, 1] = cij[2, 2] = Pmod
+        cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
         cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = (
-            p - 2 * m
+            Pmod - 2 * mu
         )
 
         return cij
 
-    @property
-    def squirt_flow_model(self) -> Callable:
-        if not self._crack_density:
+    def squirt_flow_model(self, omega) -> np.ndarray:
+        if self.crack_density is None:
             raise ValueError("Crack density not set")
-        if not self._fluid_modulus:
+        if self.fluid_modulus is None:
             raise ValueError("Fluid modulus not set")
-        if not self._omega_squirt:
+        if self.omega_squirt is None:
             raise ValueError("Squirt frequency not set")
         Kf = self.fluid_modulus
         epsilon = self.crack_density
         omegac = self.omega_squirt
-        cij = np.zeros((6, 6), dtype=np.cfloat)
-        l, m = self.lam, self.mu
+        cij = np.zeros((6, 6), dtype=complex)
+        l, m = self.lam, self.shear_modulus
         lamb = (16 * (15 * l * (-Kf + l) + 4 * (-3 * Kf + 5 * l) * m + 4 * m**2)) / (
             45.0 * (l + m) * (3 * Kf + 4 * m)
         )
@@ -403,34 +488,29 @@ class RockPhysicsModel:
         cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
         cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = lamb
 
-        def _squirt(omega) -> np.ndarray:
-            return low_freq + epsilon * (l + 2 * m) * (
-                1j
-                * (10 ** (omega - omegac))
-                / (1 + 1j * (10 ** (omega - omegac)) * cij)
-            )
-
-        return _squirt
+        return low_freq + epsilon * cij * (l + 2 * m) * (
+            1j * (10 ** (omega - omegac)) / (1 + 1j * (10 ** (omega - omegac)))
+        )
 
     # def __call__(self, *args: Any, **kwds: Any) -> Any:
 
-    def plot(self) -> None:
-        omegac = self.omega_squirt
-        omega_axis = np.arange(-2, 2, 0.1) - omegac
-        cij0 = self.gassmann_model
-        cij = self.squirt_flow_model()
-        # f_cij = np.array([cij(omega) for omega in omega_axis])
-        f_cij = np.array([cij(omega) for omega in omega_axis])
-        fig, ax = plt.subplots(1, 1)
-        ax.axhline(cij0[0, 0], linestyle="--", color="k")
-        ax.plot(omega_axis, np.real(f_cij[:, 0, 0]))
-        plt.show()
-        plt.close()
+    # def plot(self) -> None:
+    #     omegac = self.omega_squirt
+    #     omega_axis = np.arange(-2, 2, 0.1) - omegac
+    #     cij0 = self.gassmann_model
+    #     cij = self.squirt_flow_model()
+    #     # f_cij = np.array([cij(omega) for omega in omega_axis])
+    #     f_cij = np.array([cij(omega) for omega in omega_axis])
+    #     fig, ax = plt.subplots(1, 1)
+    #     ax.axhline(cij0[0, 0], linestyle="--", color="k")
+    #     ax.plot(omega_axis, np.real(f_cij[:, 0, 0]))
+    #     plt.show()
+    #     plt.close()
 
     def __call__(
         self,
-        fluid_modulus: float | None = None,
-        omegac: float | None = None,
+        fluid_modulus: np.float64 | None = None,
+        omegac: np.float64 | None = None,
     ) -> RockPhysicsModel:
         if fluid_modulus is not None:
             self.fluid_modulus = fluid_modulus
@@ -439,8 +519,8 @@ class RockPhysicsModel:
         return self
 
 
-if __name__ == "__main__":
-    # rock = RockPhysicsModel(
-    #     dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2
-    # )
-    # rock(fluid_modulus=10, epsilon=0.1, omegac=0.0).plot
+# if __name__ == "__main__":
+# rock = RockPhysicsModel(
+#     dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2
+# )
+# rock(fluid_modulus=10, epsilon=0.1, omegac=0.0).plot
