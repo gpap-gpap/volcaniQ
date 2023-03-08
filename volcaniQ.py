@@ -188,6 +188,18 @@ class EffectiveFluid(object):
         self._saturation = None
         self._patch_parameter = None
         self._reference_frequency = None
+        self._brooks_corey_lambda = 3.0
+
+    @property
+    def brooks_corey_lambda(self):
+        return self._brooks_corey_lambda
+
+    @brooks_corey_lambda.setter
+    def brooks_corey_lambda(self, value):
+        if value > 0:
+            self._brooks_corey_lambda = value
+        else:
+            raise ValueError("Brooks Corey lambda must be greater than 0")
 
     @property
     def saturation(self):
@@ -244,7 +256,7 @@ class EffectiveFluid(object):
             )
 
         eta1, eta2 = self.fluid1.viscosity, self.fluid2.viscosity
-        k1, k2 = BrooksCorey(s)
+        k1, k2 = BrooksCorey(s, self.brooks_corey_lambda)
         m1, m2 = k1 / eta1, k2 / eta2
         eta_eff = (
             self.reference_frequency
@@ -477,35 +489,69 @@ class RockPhysicsModel:
         Kf = self.fluid_modulus
         epsilon = self.crack_density
         omegac = self.omega_squirt
-        cij = np.zeros((6, 6), dtype=complex)
+        cij = np.zeros((6, 6), dtype=np.cdouble)
         l, m = self.lam, self.shear_modulus
         lamb = (16 * (15 * l * (-Kf + l) + 4 * (-3 * Kf + 5 * l) * m + 4 * m**2)) / (
             45.0 * (l + m) * (3 * Kf + 4 * m)
         )
         mu = (16 * m) / (45.0 * (l + m))
-        low_freq = self.low_frequency_model
+        # low_freq = self.low_frequency_model
         cij[0, 0] = cij[1, 1] = cij[2, 2] = lamb + 2 * mu
         cij[3, 3] = cij[4, 4] = cij[5, 5] = mu
         cij[0, 1] = cij[0, 2] = cij[2, 0] = cij[1, 0] = cij[1, 2] = cij[2, 1] = lamb
-
-        return low_freq + epsilon * cij * (l + 2 * m) * (
-            1j * (10 ** (omega - omegac)) / (1 + 1j * (10 ** (omega - omegac)))
+        result = self.low_frequency_model + epsilon * cij * (l + 2 * m) * (
+            1j * 10 ** (omega - omegac) / (1 + 1j * 10 ** (omega - omegac))
         )
+
+        # print()
+        return result
 
     # def __call__(self, *args: Any, **kwds: Any) -> Any:
 
-    # def plot(self) -> None:
-    #     omegac = self.omega_squirt
-    #     omega_axis = np.arange(-2, 2, 0.1) - omegac
-    #     cij0 = self.gassmann_model
-    #     cij = self.squirt_flow_model()
-    #     # f_cij = np.array([cij(omega) for omega in omega_axis])
-    #     f_cij = np.array([cij(omega) for omega in omega_axis])
-    #     fig, ax = plt.subplots(1, 1)
-    #     ax.axhline(cij0[0, 0], linestyle="--", color="k")
-    #     ax.plot(omega_axis, np.real(f_cij[:, 0, 0]))
-    #     plt.show()
-    #     plt.close()
+    def plot(self, attribute: str) -> None:
+        # assert str=="moduli" or str=="attenuation", "attribute must be 'moduli' or 'attenuation'"
+        omegac = self.omega_squirt
+        omega_axis = np.arange(-2, 2, 0.1) - omegac
+        cij0 = self.low_frequency_model
+        cij = self.squirt_flow_model
+        # f_cij = np.array([cij(omega) for omega in omega_axis])
+        f_cij = np.array([cij(omega) for omega in omega_axis])
+
+        if attribute == "moduli":
+            fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+            fig.subplots_adjust(hspace=0.05)
+            # ax1.axhline(cij0[0, 0], linestyle="--", color="k")
+            # ax2.axhline(cij0[5, 5], linestyle="--", color="k")
+
+            ax1.plot(omega_axis, np.real(f_cij[:, 0, 0]), label="P modulus")
+            ax2.plot(omega_axis, np.real(f_cij[:, 5, 5]), label="S modulus")
+
+            ax1.spines.bottom.set_visible(False)
+            ax2.spines.top.set_visible(False)
+            ax1.xaxis.tick_top()
+            ax1.tick_params(labeltop=False)  # don't put tick labels at the top
+            ax2.xaxis.tick_bottom()
+        elif attribute == "attenuation":
+            fig, ax = plt.subplots(1, 1)
+            att = lambda x: np.imag(x) / np.real(x)
+            ax.plot(omega_axis, att(f_cij[:, 0, 0]), label="P attenuation")
+            ax.plot(omega_axis, att(f_cij[:, 5, 5]), label="S attenuation")
+            ax.legend()
+        plt.show()
+        plt.close()
+
+    def plot_attenuation(self) -> None:
+        omegac = self.omega_squirt
+        omega_axis = np.arange(-2, 2, 0.1) - omegac
+        cij0 = self.gassmann_model
+        cij = self.squirt_flow_model()
+        # f_cij = np.array([cij(omega) for omega in omega_axis])
+        f_cij = np.array([cij(omega) for omega in omega_axis])
+        fig, ax = plt.subplots(1, 1)
+        ax.axhline(cij0[0, 0], linestyle="--", color="k")
+        ax.plot(omega_axis, np.real(f_cij[:, 0, 0]))
+        plt.show()
+        plt.close()
 
     def __call__(
         self,

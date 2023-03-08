@@ -14,6 +14,7 @@ dependencies:
   - babel=2.11.0=py39hecd8cb5_0
   - backcall=0.2.0=pyhd3eb1b0_0
   - beautifulsoup4=4.11.1=py39hecd8cb5_0
+  - black=22.6.0=py39hecd8cb5_0
   - bleach=4.1.0=pyhd3eb1b0_0
   - boost=1.76.0=py39ha1f3e3e_1
   - boost-cpp=1.76.0=hff03dee_1
@@ -29,6 +30,7 @@ dependencies:
   - cffi=1.15.1=py39h6c40b1e_3
   - cftime=1.6.1=py39h15b18c7_0
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
+  - click=8.0.4=py39hecd8cb5_0
   - comm=0.1.2=py39hecd8cb5_0
   - commonmark=0.9.1=py_0
   - cryptography=38.0.4=py39hf6deb26_0
@@ -45,6 +47,7 @@ dependencies:
   - executing=0.8.3=pyhd3eb1b0_0
   - expat=2.4.8=h96cf925_0
   - ffmpeg=4.4.1=h2579ba5_2
+  - flake8=6.0.0=py39hecd8cb5_0
   - fonttools=4.34.4=py39h701faf5_0
   - freetype=2.10.4=h4cff582_1
   - future=0.18.2=py39h6e9494a_5
@@ -130,6 +133,7 @@ dependencies:
   - matplotlib=3.5.2=py39h6e9494a_0
   - matplotlib-base=3.5.2=py39h64a0072_0
   - matplotlib-inline=0.1.6=py39hecd8cb5_0
+  - mccabe=0.7.0=pyhd3eb1b0_0
   - meshio=5.3.4=pyhd8ed1ab_0
   - metis=5.1.0=h2e338ed_1006
   - mistune=0.8.4=py39h9ed2024_1000
@@ -159,6 +163,7 @@ dependencies:
   - pandas=1.4.3=py39hf72b562_0
   - pandocfilters=1.5.0=pyhd3eb1b0_0
   - parso=0.8.3=pyhd3eb1b0_0
+  - pathspec=0.10.3=py39hecd8cb5_0
   - pcre=8.45=he49afe7_0
   - pexpect=4.8.0=pyhd3eb1b0_3
   - pgcore=1.2.4=np121py39h01edc0c_0
@@ -178,7 +183,9 @@ dependencies:
   - pugixml=1.11.4=he49afe7_0
   - pure_eval=0.2.2=pyhd3eb1b0_0
   - py=1.11.0=pyh6c4a22f_0
+  - pycodestyle=2.10.0=py39hecd8cb5_0
   - pycparser=2.21=pyhd3eb1b0_0
+  - pyflakes=3.0.1=py39hecd8cb5_0
   - pygimli=1.2.6=py_0
   - pygments=2.12.0=pyhd8ed1ab_0
   - pyopenssl=22.0.0=pyhd3eb1b0_0
