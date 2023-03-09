@@ -9,3 +9,4 @@
 ## References
 
 1. Papageorgiou, Georgios, and Mark Chapman. "[Wave-propagation in rocks saturated by two immiscible fluids.](https://academic.oup.com/gji/article-pdf/209/3/1761/13842182/ggx128.pdf)" Geophysical Journal International 209.3 (2017): 1761-1767.
+2. Mavko, Gary, and Tapan Mukerji. "[Seismic pore space compressibility and Gassmann’s relation.](https://pubs.geoscienceworld.org/geophysics/article-abstract/60/6/1743/106892)" Geophysics 60.6 (1995): 1743-1749.
