@@ -9,8 +9,6 @@ class FluidsReadCSV(object):
     """
     Fluids class for accessing fluid properties from a csv file
 
-    _extended_summary_
-
     Args:
         object (_type_): _description_
     """
@@ -160,6 +158,10 @@ class CleanReadCSV(object):
 
 
 class Fluid(object):
+    """
+    Fluid class for storing geophysical properties of fluids
+    """
+
     def __init__(self, density: float, viscosity: float, modulus: float) -> None:
         self._density = density
         self._viscosity = viscosity
@@ -182,6 +184,10 @@ class Fluid(object):
 
 
 class EffectiveFluid(object):
+    """
+    EffectiveFluid class for combining two fluids and calculating effective properties
+    """
+
     def __init__(self, fluid_1: Fluid, fluid_2: Fluid) -> None:
         self.fluid1 = fluid_1
         self.fluid2 = fluid_2
@@ -191,7 +197,10 @@ class EffectiveFluid(object):
         self._brooks_corey_lambda = 3.0
 
     @property
-    def brooks_corey_lambda(self):
+    def brooks_corey_lambda(self) -> float:
+        """
+        brooks_corey_lambda the pore shape parameter for the Brooks Corey model
+        """
         return self._brooks_corey_lambda
 
     @brooks_corey_lambda.setter
@@ -239,14 +248,32 @@ class EffectiveFluid(object):
         self._reference_frequency = value
 
     @property
-    def modulus(self):
+    def modulus(self) -> float:
+        """
+        modulus: effective modulus of the fluid based on the Papageorgiou, Amalokwu and Chapman paper
+
+
+        Returns:
+            float: the effective modulus of the fluid
+        """
         s, q = self.saturation, self.patch_parameter
         k1, k2 = self.fluid1.modulus, self.fluid2.modulus
         keff = (s + q * (1 - s)) / (s / k1 + q * (1 - s) / k2)
         return keff
 
     @property
-    def omega_c(self):
+    def omega_c(self) -> float:
+        """
+        omega_c effective viscosity of the fluid based on the Papageorgiou and Chapman paper
+
+        Effective viscosity is calculated using the Brooks Corey model for relative permeability
+        and an averaging of the fluid mobilities as described in the paper. The effective viscosity
+        is a measure of relative frequency (i.e. setting reference frequency to w0 at the water
+        end, you can calculate the relative change of w under partial saturation using this method)
+
+        Returns:
+            float: the effective viscosity of the fluid
+        """
         s, q = self.saturation, self.patch_parameter
 
         def BrooksCorey(s_wetting, pore_lambda: float = 1.0):
@@ -279,6 +306,18 @@ class EffectiveFluid(object):
         patch_parameter: float = 1.0,
         reference_frequency: float = 1.0,
     ) -> EffectiveFluid:
+        """
+        __call__ method for conveniece in setting the parameters of the effective fluid
+
+
+        Args:
+            saturation (float, optional): saturation of water. Defaults to 1.0.
+            patch_parameter (float, optional): patch parameter. Defaults to 1.0 (uniform).
+            reference_frequency (float, optional): the frequency when saturation is 1. Defaults to 1.0.
+
+        Returns:
+            EffectiveFluid: _description_
+        """
         self.saturation = saturation
         self.patch_parameter = patch_parameter
         self.reference_frequency = reference_frequency
@@ -384,7 +423,6 @@ class RockPhysicsModelCalibrator(object):
             dry_modulus=Kd,
             mineral_modulus=Km,
         )
-        # self._instance.omega_squirt = 0.0
         return self._instance
 
 
@@ -503,26 +541,21 @@ class RockPhysicsModel:
             1j * 10 ** (omega - omegac) / (1 + 1j * 10 ** (omega - omegac))
         )
 
-        # print()
         return result
 
-    # def __call__(self, *args: Any, **kwds: Any) -> Any:
-
     def plot(self, attribute: str) -> None:
-        # assert str=="moduli" or str=="attenuation", "attribute must be 'moduli' or 'attenuation'"
+        assert (str == "moduli") or (
+            str == "attenuation"
+        ), "attribute must be 'moduli' or 'attenuation'"
         omegac = self.omega_squirt
         omega_axis = np.arange(-2, 2, 0.1) - omegac
         cij0 = self.low_frequency_model
         cij = self.squirt_flow_model
-        # f_cij = np.array([cij(omega) for omega in omega_axis])
         f_cij = np.array([cij(omega) for omega in omega_axis])
 
         if attribute == "moduli":
             fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
             fig.subplots_adjust(hspace=0.05)
-            # ax1.axhline(cij0[0, 0], linestyle="--", color="k")
-            # ax2.axhline(cij0[5, 5], linestyle="--", color="k")
-
             ax1.plot(omega_axis, np.real(f_cij[:, 0, 0]), label="P modulus")
             ax2.plot(omega_axis, np.real(f_cij[:, 5, 5]), label="S modulus")
 
@@ -540,19 +573,6 @@ class RockPhysicsModel:
         plt.show()
         plt.close()
 
-    def plot_attenuation(self) -> None:
-        omegac = self.omega_squirt
-        omega_axis = np.arange(-2, 2, 0.1) - omegac
-        cij0 = self.gassmann_model
-        cij = self.squirt_flow_model()
-        # f_cij = np.array([cij(omega) for omega in omega_axis])
-        f_cij = np.array([cij(omega) for omega in omega_axis])
-        fig, ax = plt.subplots(1, 1)
-        ax.axhline(cij0[0, 0], linestyle="--", color="k")
-        ax.plot(omega_axis, np.real(f_cij[:, 0, 0]))
-        plt.show()
-        plt.close()
-
     def __call__(
         self,
         fluid_modulus: np.float64 | None = None,
@@ -565,8 +585,31 @@ class RockPhysicsModel:
         return self
 
 
-# if __name__ == "__main__":
-# rock = RockPhysicsModel(
-#     dry_modulus=30, shear_modulus=10, mineral_modulus=50, porosity=0.2
-# )
-# rock(fluid_modulus=10, epsilon=0.1, omegac=0.0).plot
+class DryModulus:
+    def __init__(self, mineral_modulus: np.float64, porosity: np.float64):
+        self._mineral_modulus = mineral_modulus
+        if porosity < 0 or porosity > 1:
+            raise ValueError("Porosity must be between 0 and 1")
+        self._porosity = porosity
+
+    @property
+    def mineral_modulus(self):
+        return self._mineral_modulus
+
+    @property
+    def porosity(self):
+        return self._porosity
+
+    @porosity.setter
+    def porosity(self, porosity: float):
+        if porosity < 0 or porosity > 1:
+            raise ValueError("Porosity must be between 0 and 1")
+        self._porosity = porosity
+
+    def mavko_mukerji_dry_modulus(self, pore_space_modulus: float):
+        kdry = min(1 / (1 / self.mineral_modulus + self.porosity / pore_space_modulus),self.mineral_modulus*(1-self.porosity)) 
+        return kdry
+
+    def __call__(self, porosity: float) -> DryModulus:
+        self.porosity = porosity
+        return self
